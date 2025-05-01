@@ -1,0 +1,137 @@
+---
+title: "Survival_Analysis_Case1"
+author: "Kim Dung NGO"
+date: today
+format:
+  html:
+    toc: true
+    toc-expand: true
+    fig-align: center
+  pdf:
+    toc: true
+    fig-align: center
+execute:
+  echo: false
+  warning: false
+  cache: false
+---
+
+## 1. Data Simulation
+
+```{r}
+#| label: download package
+library(survival)
+library(ggplot2)
+library(survminer)
+library(gtsummary)
+library(dplyr)
+library(tidyr)
+```
+
+```{r}
+#| label: set-up parameters
+shape <- 0.5 #shape
+beta0 <- 7
+beta1 <- 0.2 #treatment effect
+time_limit = 12 #censoring time
+n.obs <- seq(100,1000,by=50)
+set.seed(123) #reproductibility
+```
+
+```{r}
+#| label: data simulation
+#| fig-align: center
+#| fig-asp: 1
+#| fig-width: 6
+#| out-width: 100%
+
+simulate_case1 <- function(N, return_data=FALSE) { #define case1 with N sample size
+  x <- rep(c(0,1), each = N/2) #simulate N binary treatment assignment (0=Control;1=Treatment)
+  x <- sample(x) #randomize the order
+  mu <- exp(beta0 + beta1*x) #mean survival time 
+  shape <- rep(shape,N) #repeat alpha N times
+  s <- mu/gamma(1+1/shape) #scale calculation
+  
+  T <- rweibull(N, shape = shape, scale = s) #simulate N individuals, each with survival time T drawn from a Weibull distribution
+  status <- ifelse(T>time_limit,0,1) # 1 if the even occurred within time_limit, otherwise 0 (censored)
+  T_censored <- pmin(T,time_limit) #observed survival time (either min of actual event time or time_limit)
+  
+  df1 <- data.frame(
+    group = factor(x, levels = c(0, 1), labels = c("Control", "Treatment")),
+    time = T_censored,
+    status = status
+  )
+  if (return_data) return(df)
+  
+  km_fit <- survfit(Surv(time,status) ~ group, 
+                    data = df1,
+                    type="kaplan-meier") #fit a Kaplan–Meier survival model to the data in df, using time and status as the survival outcome, and split by group
+  
+  list(
+    plot = ggsurvplot( #draw a survival curve
+      fit = km_fit,
+      data = df1,
+      pval = TRUE, #add p-value from the log-rank test
+      conf.int = TRUE, #add CI
+      xlab = "Time",
+      ylab = "Survival Probability",
+      ggtheme = theme_light(),
+      risk.table = "abs_pct", #risk table display, with count and %
+      risk.table.y.text.col = TRUE, #color the group names
+      risk.table.height = 0.25,
+      risk.table.fontsize = 3,
+      surv.median.line = "hv", #add horizontal & verical lines at the median survival time
+      legend.labs = c("Control","Treatment"),
+      palette = c("#E7B800", "#2E9FDF"),
+      title = paste("Kaplan-Meier Survival Curve (N =", N, ")")
+    ),
+    data = df1
+  )
+}
+results_case1_total <- list()
+
+for (N in n.obs) {
+  data_N <- simulate_case1(N)
+  print(data_N$plot)
+  results_case1_total[[paste0("N_", N)]] <- list(
+    data = data_N$data
+  )
+}
+
+```
+
+## 2. Baseline summary
+
+```{r results='asis'}
+#| label: baseline summary
+
+baseline_summary_1 <- list()
+
+for (name in names(results_case1_total)) { 
+  data <- results_case1_total[[name]]$data 
+  
+  summary_tbl <- data %>%
+    select(group, time, status) %>%
+    tbl_summary(
+      by = group,  # stratify by treatment group
+      label = list(
+        group = "Treatment Group",
+        time = "Survival Time",
+        status = "Event Status"
+      ),
+      statistic = list(
+        all_continuous() ~ "{mean} ({sd})",
+        all_categorical() ~ "{n} ({p}%)"
+      ),
+      missing = "no"
+    ) %>%
+    add_overall()
+
+  baseline_summary_1[[name]] <- summary_tbl
+}
+for (name in names(baseline_summary_1)) {
+  cat("##### Sample Size:", name, "\n\n")
+  print(baseline_summary_1[[name]])
+  cat("\n\n")
+}
+```
