@@ -1,0 +1,315 @@
+---
+title: "Survival_Analysis_Case3Case3"
+author: "Kim Dung NGO"
+date: today
+format:
+  html:
+    toc: true
+    toc-expand: true
+    fig-align: center
+  pdf:
+    toc: true
+    fig-align: center
+execute:
+  echo: false
+  warning: false
+  cache: false
+---
+
+## 1. Set-up Parameters
+
+```{r}
+#| label: run package
+library(survival)
+library(ggplot2)
+library(survminer)
+library(gtsummary)
+library(dplyr)
+library(tidyr)
+library(data.table)
+library(patchwork)
+library(ggdist)
+```
+
+```{r}
+#| label: set-up parameters
+shape <- 0.5 #shape
+beta0 <- 7
+beta1 <- 0.2 #treatment effect
+beta2 <- -0.5 #grade effect
+beta3 <- -1 #grade effect
+time_limit = 12 #censoring time
+immortal_rate <- c(0.25, 0.1, 0.1)
+n.obs <- seq(100,1000,by=50)
+set.seed(123)
+```
+
+## 2. Data Simulation - Draw Kaplan-Meier Curve and Create Baseline Summary
+
+### Kaplan-Meier Curve
+
+```{r}
+#| label: data simulation
+#| fig-align: center
+#| fig-asp: 1
+#| fig-width: 6
+#| out-width: 100%
+
+simulate_case3 <- function(N, return_data = FALSE, include.immortal=TRUE) {
+  N_grade <- floor(N / 6) 
+  remainder <- N - N_grade * 6 
+  
+  sub_group_labels <- expand.grid(x = c(0,1), grade = 1:3) #create data frame for combinations of factors,  2 treatments × 3 grades = 6 sub groups
+  sub_group_sizes <- rep(N_grade, 6)
+  
+  if (remainder > 0) {
+    for (i in 1:remainder) {
+      sub_group_sizes[i] <- sub_group_sizes[i] + 1 #distribute the remainder
+    }
+  }
+  
+  x <- rep(sub_group_labels$x, times = sub_group_sizes)
+  grade <- rep(sub_group_labels$grade, times = sub_group_sizes)
+
+  grade2 <- as.numeric(grade == 2)
+  grade3 <- as.numeric(grade == 3)
+  mu <- exp(beta0 + beta1 * x + beta2 * grade2 + beta3 * grade3)
+  s <- mu / gamma(1 + 1 / shape)
+  
+   T <- rweibull(N, shape = shape, scale = s) # Simulate survival times
+  if (include.immortal){
+    immortal <- rep(0, N)
+    for (i in 1:3){
+      immortal[grade==i] <- rbinom(sum(grade==i), 1, immortal_rate[i])
+    } #assign 1 = immortal with probability (immortal_rate)
+      T <- ifelse(immortal, Inf, T)
+  }
+  status <- ifelse(T > time_limit, 0, 1)
+  T_censored <- pmin(T, time_limit)
+
+  df3 <- data.frame(
+    group = factor(x, levels = c(0, 1), labels = c("Control", "Treatment")),
+    grade = factor(grade),
+    time = T_censored,
+    status = status
+  )
+
+  if (return_data) return(df3)
+
+  km_fit3 <- survfit(Surv(time, status) ~ group + grade, data = df3)
+
+  return(list(
+    plot = ggsurvplot(
+      fit = km_fit3,
+      data = df3,
+      conf.int = FALSE,
+      xlab = "Time",
+      ylab = "Survival Probability",
+      ggtheme = theme_light(),
+      facet.by = "grade",
+      surv.median.line = "hv",
+      title = paste("Kaplan-Meier Survival Curve with Grade Stratification (N =", N, ")")
+    ),
+    data = df3
+  ))
+}
+
+results_case3_total <- list()
+
+for (N in n.obs) {
+  data_N <- simulate_case3(N)
+  print(data_N$plot)
+  results_case3_total[[paste0("N_", N)]] <- list(
+    data = data_N$data
+  )
+}
+```
+
+### Testing distribution of sample sizes
+
+```{r}
+#| label: Testing distribution of n.obs
+data_N <- simulate_case3(N = 1000, return_data=TRUE)  # charge N to any sample size
+table(data_N$group, data_N$grade) # Count number of samples in each group (group × grade)
+```
+
+### Baseline Summary
+
+```{r results='asis'}
+#| label: baseline summary
+
+baseline_summary_3 <- list()
+
+for (name in names(results_case3_total)) { #loop over each name in the list like N_100, N_150, etc
+  data <- results_case3_total[[name]]$data #access data and assign for use inside the loop
+  
+  summary_tbl <- data %>%
+    select(group, grade, time, status) %>%
+    tbl_summary(
+      by = group,  # stratify by treatment group
+      label = list(
+        group = "Treatment Group",
+        grade = "Grade",
+        time = "Survival Time",
+        status = "Event Status"
+      ),
+      statistic = list(
+        all_continuous() ~ "{mean} ({sd})",
+        all_categorical() ~ "{n} ({p}%)"
+      ),
+      missing = "no"
+    ) %>%
+    add_overall()
+
+  baseline_summary_3[[name]] <- summary_tbl
+}
+for (name in names(baseline_summary_3)) {
+  cat("##### Sample Size:", name, "\n\n")
+  print(baseline_summary_3[[name]])
+  cat("\n\n")
+}
+```
+
+## 3. Find true value of Hazard ratio - Verify proportional hazard assumption & Plot the Schoenfeld residuals & Plot Kaplan Meier Curve
+
+### Create data with size of 1e6
+
+```{r}
+#| label: data simulation 1e6
+set.seed(123)
+data_1e6 <- simulate_case3(N = 1e6, return_data = TRUE)
+```
+
+### Fit Cox model
+
+```{r}
+#| label: cox model 1e6
+cox_model_1e6 <- coxph(Surv(time, status) ~ group + grade, data = data_1e6)
+summary(cox_model_1e6)  # Shows estimated hazard ratios
+```
+
+### Verify proportional hazard assumption
+
+```{r}
+#| label: PH assumption
+cox_PH <- cox.zph(cox_model_1e6)
+print(cox_PH)
+```
+
+### Plot the Schoenfeld residuals
+
+```{r}
+#| label: Schoenfeld
+plot(cox_PH, resid = F) #no residual points
+```
+
+### Draw Kaplan-Meier Curve
+
+```{r}
+#| label: KP-M Curve
+
+km_fit_1e6 <- survfit(Surv(time, status) ~ group + grade, data = data_1e6)
+
+ggsurvplot(
+  fit = km_fit_1e6,
+  data = data_1e6,
+  conf.int = FALSE,
+  xlab = "Time",
+  ylab = "Survival Probability",
+  ggtheme = theme_light(),
+  facet.by = "grade",    
+  surv.median.line = "hv",
+  title = "Kaplan-Meier Survival Curve with Grade Stratification (N = 1,000,000)"
+)
+
+```
+
+## 4. Plot Monte Carlo Variance of lower bound (CI 95%) of HR of groupTreatment (Number of simulations: 500)
+
+```{r}
+#| label: CI Simulation
+
+n_sim <- 500
+l95s <- list(
+  l95s_correct = setNames(vector("list", length(n.obs)), n.obs),
+  l95s_misspec = setNames(vector("list", length(n.obs)), n.obs)
+)
+
+for (N in n.obs) {
+  l95s$l95s_correct[[as.character(N)]] <- sapply(seq_len(n_sim), function(i) {
+    data_sim <- simulate_case3(N, return_data = TRUE)
+    exp(confint(coxph(Surv(time, status) ~ group + grade, data = data_sim))["groupTreatment", 1])
+  })
+
+  l95s$l95s_misspec[[as.character(N)]] <- sapply(seq_len(n_sim), function(i) {
+    data_sim <- simulate_case3(N, return_data = TRUE)
+    exp(confint(coxph(Surv(time, status) ~ group, data = data_sim))["groupTreatment", 1])
+  })
+}
+```
+
+```{r}
+#| label: Plot CI Simulation
+
+l95s_sim <- l95s |>
+  lapply(\(x) {
+    m <- do.call(cbind, x) 
+    colnames(m) <- n.obs
+      as.data.frame(m) |>
+      pivot_longer(
+        cols=everything(),
+        names_to = 'n.obs',
+        values_to = 'l95'
+      ) |>
+        mutate(n.obs=as.integer(n.obs)) |>
+        arrange(n.obs)
+  }) 
+ 
+  cbind(rename(l95s_sim[[1]], 'l95s_correct' ='l95'), 
+        rename(l95s_sim[[2]]['l95'], 'l95s_misspec'='l95')) |>
+  pivot_longer(cols = starts_with('l95'), names_to = 'model', values_to='l95', names_prefix='l95.') |>
+  ggplot() + stat_pointinterval(aes(x=n.obs, y=l95, color=model), position = position_dodge(width=NULL))+ labs(x = "Sample Size", y = "Lower Bound")
+```
+
+## 5. Calculate power & Draw power curve
+
+### Calculate power
+
+```{r}
+#| label: Power calculation
+
+threshold <- 0.6
+
+power_df <- tibble(
+  Sample_Size = as.integer(n.obs),
+  Power_Correct = sapply(l95s$l95s_correct, function(x) mean(x > threshold)),
+  Power_Misspec = sapply(l95s$l95s_misspec, function(x) mean(x > threshold))
+)
+power_df
+```
+
+### Power curve by Model Specification
+
+```{r}
+#| label: Power_curve
+
+power <- power_df %>%
+  pivot_longer(
+    cols = starts_with("Power"),
+    names_to = "Model",
+    values_to = "Power"
+  )
+ggplot(power, aes(x = Sample_Size, y = Power, color = Model)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  geom_hline(yintercept = threshold, linetype = "dashed", color = "gray") +
+  scale_y_continuous(limits = c(0,1)) +
+  labs(
+    subtitle = paste0("Threshold = ", threshold, ", Number of simulations = ", n_sim),
+    x = "Sample Size",
+    y = "Power",
+    color = "Model"
+  )
+```
+
+## 6. Interpretation
