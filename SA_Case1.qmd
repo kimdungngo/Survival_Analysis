@@ -135,4 +135,3 @@ for (name in names(baseline_summary_1)) {
   cat("\n\n")
 }
 ```
-echo "Hello World" > index.html
