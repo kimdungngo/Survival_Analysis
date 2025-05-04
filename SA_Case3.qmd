@@ -320,7 +320,7 @@ In this study, we use a 95% two-sided confidence interval to assess non-inferior
 
 -   Null hypothesis: l95 \< threshold (0.6): The lower bound of the 95% confidence interval for the hazard ratio is at or below the threshold. The treatment then has equal or more than 40% lower hazard than the control.
 
--   Alternative hypothesis: l95 \> threshold (0.6): The lower bound of the 95% confidence interval for the treatment effect is at or below the threshold. The treatment then has less than 40% lower hazard than the c
+-   Alternative hypothesis: l95 \> threshold (0.6): The lower bound of the 95% confidence interval for the treatment effect is above the threshold. The treatment then has less than 40% lower hazard than the control.
 
 [**Power Curve:**]{.underline}
 
