@@ -328,6 +328,6 @@ The Power Curve Plot shows the probability of rejecting the null hypothesis acro
 
 [**Interpretation:**]{.underline}
 
-Power increases with sample size for both the correctly specified model and the mis-specified model. The mis-specified model shows slightly higher power and his gap is more visible at smaller sample sizes.
+Power increases with sample size for both the correctly specified model and the mis-specified model. There is no significant gap of power between these 2 models, especially at the small sample sizes.
 
 To achieve the target power of 80% to declare non-inferiority, a sample size of approximately 950 or greater is required for both models. With smaller sample sizes, neither models reach the expected power.
